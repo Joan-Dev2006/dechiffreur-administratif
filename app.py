@@ -13,7 +13,8 @@ st.markdown("---")
 
 # Barre latérale pour la clé API
 st.sidebar.header("🔑 Configuration Cloud")
-api_key = st.sidebar.text_input("Entrez votre clé API Groq (gsk_...)", type="password")
+# L'application va chercher la clé secrète toute seule sur le serveur !
+api_key = st.secrets["GROQ_API_KEY"]
 
 st.subheader("1. Importez votre document")
 fichier_implique = st.file_uploader("Choisissez un fichier (Format PDF, DOCX ou TXT)", type=["pdf", "docx", "txt"])
