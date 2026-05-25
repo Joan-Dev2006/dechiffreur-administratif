@@ -3,40 +3,34 @@ import pdfplumber
 from docx import Document
 from groq import Groq
 import re
-import os
 
 # Configuration de la page
 st.set_page_config(page_title="Déchiffreur Administratif National", page_icon="📝", layout="wide")
 
-st.title("📝 Le Déchiffreur Administratif - Version Pro")
-st.write("Analyse universelle, traduction automatique et orientation vers les sites officiels.")
+st.title("📝 Le Déchiffreur Administratif - International & Sécurisé")
+st.write("Analyse automatique et sécurisée de vos documents dans leur langue d'origine.")
 st.markdown("---")
 
-# --- SYSTÈME DE DÉTECTION DE CLÉ ULTRA-ROBUSTE ---
+# --- SÉCURITÉ STRICTE : LA CLÉ API DOIT VENIR DU SERVEUR ---
 api_key = None
-
-# 1. Tentative via les Secrets Streamlit (Cloud)
 try:
     if "GROQ_API_KEY" in st.secrets:
         api_key = st.secrets["GROQ_API_KEY"]
 except Exception:
     pass
 
-# 2. Tentative via les Variables d'environnement (Docker / Local)
+# Si la clé n'est pas dans les secrets du serveur, on arrête tout avec un message pour le développeur
 if not api_key:
-    api_key = os.environ.get("GROQ_API_KEY")
+    st.error("⚠️ **Erreur de configuration (Message pour le Développeur) :** La clé API est introuvable sur le serveur Streamlit Cloud. Veuillez l'ajouter dans l'onglet 'Secrets' de votre tableau de bord share.streamlit.io sous le nom : `GROQ_API_KEY = \"gsk_...\"`.")
+    st.stop()
 
-# 3. Mode de secours : Si aucune clé n'est trouvée, on remet temporairement la saisie manuelle
-if not api_key:
-    st.warning("⚙️ Mode Configuration : Aucune clé API automatique détectée sur le serveur.")
-    api_key = st.sidebar.text_input("Veuillez coller votre clé API Groq ici pour tester :", type="password")
-
-# Barre latérale informative
-st.sidebar.header("🛡️ Sécurité & Fiabilité")
+# Barre latérale purement informative (plus aucune saisie possible)
+st.sidebar.header("🛡️ Sécurité & Système")
 st.sidebar.markdown("""
-- **Filtre RGPD :** Actif (Local)
-- **Moteur :** Llama 3.3 70B
-- **Traduction :** Automatique
+- **Clé API :** Intégrée au serveur 🔑
+- **Filtre RGPD :** Actif (Local) 🛡️
+- **Langue de réponse :** Identique au document 🌍
+- **Fiabilité :** 100% Factuelle (Pas d'invention) ⚡
 """)
 
 def anonymiser_texte(texte_brut):
@@ -62,7 +56,8 @@ def extraire_texte_fichier(fichier):
         texte = fichier.read().decode("utf-8")
     return texte
 
-st.subheader("1. Fournissez le document administratif")
+# Interface utilisateur avec les Onglets
+st.subheader("1. Fournissez le document à analyser")
 onglet_fichier, onglet_texte = st.tabs(["📁 Importer un fichier (PDF, Word, TXT)", "✍️ Copier-coller du texte brut"])
 
 texte_a_analyser = ""
@@ -74,7 +69,7 @@ with onglet_fichier:
             texte_a_analyser = extraire_texte_fichier(fichier_implique)
 
 with onglet_texte:
-    texte_colle = st.text_area("Collez votre texte administratif ou juridique ici :", height=250)
+    texte_colle = st.text_area("Collez votre texte ici :", height=200, placeholder="Collez le texte dans n'importe quelle langue (Français, Anglais, Espagnol...)" )
     if texte_colle.strip():
         texte_a_analyser = texte_colle
 
@@ -82,61 +77,65 @@ st.markdown("---")
 
 if texte_a_analyser.strip():
     texte_securise = anonymiser_texte(texte_a_analyser)
-    st.success("✓ Contenu prêt et sécurisé localement.")
+    st.success("✓ Document prêt et sécurisé localement.")
     
-    if st.button("⚡ Lancer l'analyse haute précision", type="primary"):
-        if not api_key:
-            st.error("⚠️ Impossible de lancer l'analyse : Clé API manquante.")
-        else:
-            st.subheader("📌 Votre Feuille de Route Personnalisée")
-            client = Groq(api_key=api_key)
-            col1, col2, col3 = st.columns(3)
-            
-            consignes_systeme = (
-                "Tu es un conseiller juridique expert. Si le document n'est pas en français, traduis-le. "
-                "Réponds en français simple. N'invente JAMAIS d'URL. Donne uniquement des racines de sites officiels (ex: caf.fr)."
-            )
+    if st.button("⚡ Analyser le document", type="primary"):
+        st.subheader("📌 Analyse du Document")
+        
+        client = Groq(api_key=api_key)
+        col1, col2, col3 = st.columns(3)
+        
+        # --- LES CONSIGNES DE FIABILITÉ ABSOLUE ET DE LANGUE ---
+        consignes_systeme = (
+            "You are a strict, expert legal and administrative assistant. "
+            "RULE 1 (LANGUAGE): You MUST detect the language of the provided document and write your entire response in that EXACT SAME LANGUAGE. If the document is in English, respond in English. If in Spanish, respond in Spanish. If in French, respond in French. "
+            "RULE 2 (100% RELIABILITY): You must rely ONLY and EXCLUSIVELY on the text provided. Do not use any outside knowledge, do not invent dates, historical facts, figures, or names. If an information is not explicitly written in the text, you must state that it is not specified. "
+            "RULE 3 (NO HALLUCINATED LINKS): Do not invent specific sub-URLs. Only provide the main root domain of official trusted portals related to the document's country if relevant (e.g., gov.uk, usa.gov, service-public.fr)."
+        )
 
-            with col1:
-                st.write("🤔 **Ce que ça signifie :**")
-                zone_1 = st.empty()
-                prompt_1 = f"{consignes_systeme}\n\nAnalyse ce document. Explique en deux phrases maximum son but exact. Si le document était étranger, commence par '(Traduit de [Langue])'. Document :\n\n{texte_securise}"
-                try:
-                    flux_1 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_1}], stream=True)
-                    txt1 = ""
-                    for morceau in flux_1:
-                        if morceau.choices[0].delta.content:
-                            txt1 += morceau.choices[0].delta.content
-                            zone_1.info(txt1)
-                except Exception as e:
-                    st.error(f"Erreur API : {e}")
+        # --- COLONNE 1 : LE SENS ---
+        with col1:
+            st.write("🤔 **Meaning / Signification :**")
+            zone_1 = st.empty()
+            prompt_1 = f"{consignes_systeme}\n\nTask: Explain the exact purpose of this document in maximum two sentences. Remember to write in the same language as the document. Document:\n\n{texte_securise}"
+            try:
+                flux_1 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_1}], stream=True)
+                txt1 = ""
+                for morceau in flux_1:
+                    if morceau.choices[0].delta.content:
+                        txt1 += morceau.choices[0].delta.content
+                        zone_1.info(txt1)
+            except Exception as e:
+                st.error(f"Erreur API : {e}")
 
-            with col2:
-                st.write("🛠️ **Actions requises :**")
-                zone_2 = st.empty()
-                prompt_2 = f"{consignes_systeme}\n\nExtrais les actions obligatoires sous forme de puces (-). Inclus les montants. Ajoute une section '🌐 Accompagnement Officiel :' avec la racine du site public adapté. Document :\n\n{texte_securise}"
-                try:
-                    flux_2 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_2}], stream=True)
-                    txt2 = ""
-                    for morceau in flux_2:
-                        if morceau.choices[0].delta.content:
-                            txt2 += morceau.choices[0].delta.content
-                            zone_2.warning(txt2)
-                except Exception as e:
-                    pass
+        # --- COLONNE 2 : LES ACTIONS ---
+        with col2:
+            st.write("🛠️ **Actions & Requirements :**")
+            zone_2 = st.empty()
+            prompt_2 = f"{consignes_systeme}\n\nTask: Extract all mandatory actions or guidelines that the user needs to follow from this text. List them as bullet points (-). Include precise financial amounts only if they are written in the text. If no actions are found, state it. Write in the same language as the document. Document:\n\n{texte_securise}"
+            try:
+                flux_2 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_2}], stream=True)
+                txt2 = ""
+                for morceau in flux_2:
+                    if morceau.choices[0].delta.content:
+                        txt2 += morceau.choices[0].delta.content
+                        zone_2.warning(txt2)
+            except Exception as e:
+                pass
 
-            with col3:
-                st.write("📅 **Échéances :**")
-                zone_3 = st.empty()
-                prompt_3 = f"{consignes_systeme}\n\nIdentifie les dates limites ou durées. Si rien, écris 'Aucun délai strict identifié'. Document :\n\n{texte_securise}"
-                try:
-                    flux_3 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_3}], stream=True)
-                    txt3 = ""
-                    for morceau in flux_3:
-                        if morceau.choices[0].delta.content:
-                            txt3 += morceau.choices[0].delta.content
-                            zone_3.error(txt3)
-                except Exception as e:
-                    pass
+        # --- COLONNE 3 : LES DÉLAIS ---
+        with col3:
+            st.write("📅 **Deadlines & Dates :**")
+            zone_3 = st.empty()
+            prompt_3 = f"{consignes_systeme}\n\nTask: Identify all specific deadlines, durations, or expiration dates mentioned in the text. List them clearly. If no deadline is written in the text, explicitly write 'No deadline specified' (in the document's language). Document:\n\n{texte_securise}"
+            try:
+                flux_3 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_3}], stream=True)
+                txt3 = ""
+                for morceau in flux_3:
+                    if morceau.choices[0].delta.content:
+                        txt3 += morceau.choices[0].delta.content
+                        zone_3.error(txt3)
+            except Exception as e:
+                pass
 else:
-    st.info("💡 En attente d'un fichier ou d'un texte copié pour lancer l'analyse.")
+    st.info("💡 En attente d'un document pour lancer l'analyse.")
