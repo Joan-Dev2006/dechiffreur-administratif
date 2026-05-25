@@ -3,6 +3,7 @@ import pdfplumber
 from docx import Document
 from groq import Groq
 import re
+import os
 
 # Configuration de la page
 st.set_page_config(page_title="Déchiffreur Administratif National", page_icon="📝", layout="wide")
@@ -11,30 +12,38 @@ st.title("📝 Le Déchiffreur Administratif - Version Pro")
 st.write("Analyse universelle, traduction automatique et orientation vers les sites officiels.")
 st.markdown("---")
 
-# Récupération automatique de la clé API
+# --- SYSTÈME DE DÉTECTION DE CLÉ ULTRA-ROBUSTE ---
+api_key = None
+
+# 1. Tentative via les Secrets Streamlit (Cloud)
 try:
-    api_key = st.secrets["GROQ_API_KEY"]
+    if "GROQ_API_KEY" in st.secrets:
+        api_key = st.secrets["GROQ_API_KEY"]
 except Exception:
-    st.error("⚠️ Erreur : La clé API du serveur est introuvable dans les Secrets.")
-    st.stop()
+    pass
+
+# 2. Tentative via les Variables d'environnement (Docker / Local)
+if not api_key:
+    api_key = os.environ.get("GROQ_API_KEY")
+
+# 3. Mode de secours : Si aucune clé n'est trouvée, on remet temporairement la saisie manuelle
+if not api_key:
+    st.warning("⚙️ Mode Configuration : Aucune clé API automatique détectée sur le serveur.")
+    api_key = st.sidebar.text_input("Veuillez coller votre clé API Groq ici pour tester :", type="password")
 
 # Barre latérale informative
 st.sidebar.header("🛡️ Sécurité & Fiabilité")
 st.sidebar.markdown("""
 - **Filtre RGPD :** Actif (Local)
-- **Moteur :** Llama 3.3 70B (Ultra-Précis)
-- **Traduction :** Automatique vers le Français
-- **Orientation :** Liens institutionnels certifiés
+- **Moteur :** Llama 3.3 70B
+- **Traduction :** Automatique
 """)
 
-# --- FONCTIONS REQUISENT (SÉCURITÉ ET EXTRACTION) ---
 def anonymiser_texte(texte_brut):
     pattern_email = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     texte_anonyme = re.sub(pattern_email, "[E-MAIL MASQUÉ]", texte_brut)
-    
     pattern_telephone = r'(?:(?:\+|00)33|0)\s*[1-9](?:[\s.-]*\d{2}){4}'
-    texte_anonyme = re.sub(pattern_telephone, "[TÉLÉPHONE MASQUÉ]", texte_anonyme)
-    return texte_anonyme
+    return re.sub(pattern_telephone, "[TÉLÉPHONE MASQUÉ]", texte_anonyme)
 
 def extraire_texte_fichier(fichier):
     extension = fichier.name.split(".")[-1].lower()
@@ -53,7 +62,6 @@ def extraire_texte_fichier(fichier):
         texte = fichier.read().decode("utf-8")
     return texte
 
-# --- INTERFACE FLUIDE : LES ONGLETS ---
 st.subheader("1. Fournissez le document administratif")
 onglet_fichier, onglet_texte = st.tabs(["📁 Importer un fichier (PDF, Word, TXT)", "✍️ Copier-coller du texte brut"])
 
@@ -66,85 +74,69 @@ with onglet_fichier:
             texte_a_analyser = extraire_texte_fichier(fichier_implique)
 
 with onglet_texte:
-    texte_colle = st.text_area("Collez votre texte administratif ou juridique ici (sans limite de taille) :", height=250, placeholder="Ex: Paste your contract details here / Collez le texte de votre amende...")
+    texte_colle = st.text_area("Collez votre texte administratif ou juridique ici :", height=250)
     if texte_colle.strip():
         texte_a_analyser = texte_colle
 
 st.markdown("---")
 
-# --- ENGINE D'ANALYSE ---
 if texte_a_analyser.strip():
-    # Sécurisation immédiate
     texte_securise = anonymiser_texte(texte_a_analyser)
     st.success("✓ Contenu prêt et sécurisé localement.")
     
-    with st.expander("🔍 Inspecter les données textuelles anonymisées"):
-        st.text(texte_securise)
-
     if st.button("⚡ Lancer l'analyse haute précision", type="primary"):
-        st.subheader("📌 Votre Feuille de Route Personnalisée")
-        
-        client = Groq(api_key=api_key)
-        col1, col2, col3 = st.columns(3)
-        
-        # --- CONTEXTE MULTILINGUE ET LIENS IMPOSÉS (RÈGLES STRICTES POUR L'IA) ---
-        consignes_systeme = (
-            "Tu es un conseiller juridique expert et un traducteur d'élite. "
-            "IMPORTANT : Si le document soumis n'est pas en français, tu dois d'abord le traduire mentalement. "
-            "Toutes tes réponses DOIVENT être rédigées dans un français impeccable, très simple et accessible à un citoyen ordinaire. "
-            "Interdiction formelle d'inventer des URL spécifiques (Erreur 404). Tu dois uniquement orienter l'utilisateur "
-            "vers les racines des sites officiels français si le contexte s'y prête (ex: service-public.fr, impots.gouv.fr, caf.fr, ameli.fr, urssaf.fr, legifrance.gouv.fr)."
-        )
+        if not api_key:
+            st.error("⚠️ Impossible de lancer l'analyse : Clé API manquante.")
+        else:
+            st.subheader("📌 Votre Feuille de Route Personnalisée")
+            client = Groq(api_key=api_key)
+            col1, col2, col3 = st.columns(3)
+            
+            consignes_systeme = (
+                "Tu es un conseiller juridique expert. Si le document n'est pas en français, traduis-le. "
+                "Réponds en français simple. N'invente JAMAIS d'URL. Donne uniquement des racines de sites officiels (ex: caf.fr)."
+            )
 
-        # --- COLONNE 1 : LE SENS (TRADUIT SI BESOIN) ---
-        with col1:
-            st.write("🤔 **Ce que ça signifie (Explications) :**")
-            zone_1 = st.empty()
-            with st.spinner("Décodage en cours..."):
-                prompt_1 = f"{consignes_systeme}\n\nAnalyse ce document. Explique en deux phrases maximum son but exact. Si le document original était dans une autre langue que le français, commence obligatoirement ta réponse par la mention '*(Traduit de [Langue d'origine])*'. Document :\n\n{texte_securise}"
-                flux_1 = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[{"role": "user", "content": prompt_1}],
-                    stream=True
-                )
-                txt1 = ""
-                for morceau in flux_1:
-                    if morceau.choices[0].delta.content:
-                        txt1 += morceau.choices[0].delta.content
-                        zone_1.info(txt1)
+            with col1:
+                st.write("🤔 **Ce que ça signifie :**")
+                zone_1 = st.empty()
+                prompt_1 = f"{consignes_systeme}\n\nAnalyse ce document. Explique en deux phrases maximum son but exact. Si le document était étranger, commence par '(Traduit de [Langue])'. Document :\n\n{texte_securise}"
+                try:
+                    flux_1 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_1}], stream=True)
+                    txt1 = ""
+                    for morceau in flux_1:
+                        if morceau.choices[0].delta.content:
+                            txt1 += morceau.choices[0].delta.content
+                            zone_1.info(txt1)
+                except Exception as e:
+                    st.error(f"Erreur API : {e}")
 
-        # --- COLONNE 2 : LES ACTIONS ET DÉMARCHES ---
-        with col2:
-            st.write("🛠️ **Actions requises & Démarches :**")
-            zone_2 = st.empty()
-            with st.spinner("Extraction des démarches..."):
-                prompt_2 = f"{consignes_systeme}\n\nExtrais toutes les actions concrètes et obligations que l'utilisateur doit accomplir. Liste-les sous forme de puces tirets (-). Inclus les montants financiers précis s'il y en a. À la fin de ta liste, ajoute une section distincte nommée '🌐 Accompagnement Officiel :' où tu donnes uniquement le nom de la racine du site public français légitime pour faire cette démarche (ex: caf.fr ou service-public.fr), sans inventer de sous-pages. Document :\n\n{texte_securise}"
-                flux_2 = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[{"role": "user", "content": prompt_2}],
-                    stream=True
-                )
-                txt2 = ""
-                for morceau in flux_2:
-                    if morceau.choices[0].delta.content:
-                        txt2 += morceau.choices[0].delta.content
-                        zone_2.warning(txt2)
+            with col2:
+                st.write("🛠️ **Actions requises :**")
+                zone_2 = st.empty()
+                prompt_2 = f"{consignes_systeme}\n\nExtrais les actions obligatoires sous forme de puces (-). Inclus les montants. Ajoute une section '🌐 Accompagnement Officiel :' avec la racine du site public adapté. Document :\n\n{texte_securise}"
+                try:
+                    flux_2 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_2}], stream=True)
+                    txt2 = ""
+                    for morceau in flux_2:
+                        if morceau.choices[0].delta.content:
+                            txt2 += morceau.choices[0].delta.content
+                            zone_2.warning(txt2)
+                except Exception as e:
+                    pass
 
-        # --- COLONNE 3 : LES DÉLAIS LÉGAUX ---
-        with col3:
-            st.write("📅 **Échéances & Dates Limites :**")
-            zone_3 = st.empty()
-            with st.spinner("Calcul des délais..."):
-                prompt_3 = f"{consignes_systeme}\n\nIdentifie toutes les dates limites, les durées ou les délais maximums accordés à l'utilisateur (ex: 15 jours, sous 2 mois, avant le 31 décembre). Liste-les clairement. Si aucun délai n'est mentionné, écris textuellement 'Aucun délai strict identifié'. Document :\n\n{texte_securise}"
-                flux_3 = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[{"role": "user", "content": prompt_3}],
-                    stream=True
-                )
-                txt3 = ""
-                for morceau in flux_3:
-                    if morceau.choices[0].delta.content:
-                        txt3 += morceau.choices[0].delta.content
-                        zone_3.error(txt3)
+            with col3:
+                st.write("📅 **Échéances :**")
+                zone_3 = st.empty()
+                prompt_3 = f"{consignes_systeme}\n\nIdentifie les dates limites ou durées. Si rien, écris 'Aucun délai strict identifié'. Document :\n\n{texte_securise}"
+                try:
+                    flux_3 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_3}], stream=True)
+                    txt3 = ""
+                    for morceau in flux_3:
+                        if morceau.choices[0].delta.content:
+                            txt3 += morceau.choices[0].delta.content
+                            zone_3.error(txt3)
+                except Exception as e:
+                    pass
 else:
     st.info("💡 En attente d'un fichier ou d'un texte copié pour lancer l'analyse.")
