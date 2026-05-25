@@ -1,4 +1,8 @@
 streamlit
+groq
+easyocr
+opencv-python-headless
+pillow
+numpy
 pdfplumber
 python-docx
-groq
