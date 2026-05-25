@@ -72,7 +72,7 @@ def extraire_texte_via_vision(image_file, api_key_groq):
     prompt = "Transcribe all the text from this document image accurately. Output ONLY the raw text found. Do not add explanations or formatting."
     
     reponse = client_vision.chat.completions.create(
-        model="llama-3.2-11b-vision-preview",
+        model="llama-3.2-11b-vision",  # <-- LA CORRECTION EST ICI : on passe sur la version stable
         messages=[
             {
                 "role": "user",
