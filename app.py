@@ -10,12 +10,14 @@ import pdfplumber
 from docx import Document
 from groq import Groq
 import re
-import base64
+import easyocr
+import numpy as np
+from PIL import Image
 
 # Configuration de la page
 st.set_page_config(page_title="Déchiffreur Administratif National", page_icon="📝", layout="wide")
 
-st.title("📝 Le Déchiffreur Administratif - Version Grand Public")
+st.title("📝 Le Déchiffreur Administratif - Scanner Hybride Local & Cloud")
 st.write("Prenez une photo de votre document, importez un fichier ou collez du texte.")
 st.markdown("---")
 
@@ -35,7 +37,8 @@ if not api_key:
 st.sidebar.header("🛡️ Spécifications du Système")
 st.sidebar.markdown("""
 - **Mode :** Grand Public 👥
-- **Scanner Photo :** Actif (Llama Vision) 📸
+- **Scanner Photo :** EasyOCR (Local sur votre PC) 🖥️
+- **Moteur d'Analyse :** Llama 3.3 70B Versatile 🧠
 - **Fiabilité :** 100% Factuelle ⚡
 """)
 
@@ -63,27 +66,19 @@ def extraire_texte_fichier(fichier):
         texte = fichier.read().decode("utf-8")
     return texte
 
-def extraire_texte_via_vision(image_file, api_key_groq):
-    """Utilise Llama Vision pour lire le texte sur une photo ou capture caméra"""
-    client_vision = Groq(api_key=api_key_groq)
-    bytes_data = image_file.read()
-    base64_image = base64.b64encode(bytes_data).decode('utf-8')
+def extraire_texte_via_vision_locale(image_file):
+    """Utilise EasyOCR en local pour lire le texte sur une photo, compatible multilingue"""
+    image = Image.open(image_file)
+    image_np = np.array(image)
     
-    prompt = "Transcribe all the text from this document image accurately. Output ONLY the raw text found. Do not add explanations or formatting."
+    # Configuration du lecteur pour charger le Français, l'Anglais et l'Espagnol
+    reader = easyocr.Reader(['fr', 'en', 'es'], gpu=False)
     
-    reponse = client_vision.chat.completions.create(
-        model="llama-3.2-11b-vision",  # <-- LA CORRECTION EST ICI : on passe sur la version stable
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
-                ],
-            }
-        ],
-    )
-    return reponse.choices[0].message.content
+    # Lecture du texte
+    resultats = reader.readtext(image_np, detail=0)
+    
+    # Fusion des blocs de texte trouvés
+    return "\n".join(resultats)
 
 # --- INTERFACE UTILISATEUR ---
 st.subheader("1. Soumettez votre document de la manière la plus simple pour vous")
@@ -98,18 +93,18 @@ texte_a_analyser = ""
 with onglet_photo:
     photo_capturee = st.camera_input("Positionnez le document devant l'appareil et déclenchez :")
     if photo_capturee is not None:
-        with st.spinner("👁️ Analyse de la photo capturée..."):
-            texte_a_analyser = extraire_texte_via_vision(photo_capturee, api_key)
+        with st.spinner("👁️ Le scanner local déchiffre les caractères de votre photo..."):
+            texte_a_analyser = extraire_texte_via_vision_locale(photo_capturee)
 
 with onglet_fichier:
     fichier_implique = st.file_uploader("Glissez-déposez un fichier :", type=["pdf", "docx", "txt", "png", "jpg", "jpeg"])
     if fichier_implique is not None:
         extension = fichier_implique.name.split(".")[-1].lower()
         if extension in ["png", "jpg", "jpeg"]:
-            with st.spinner("👁️ Lecture de l'image importée..."):
-                texte_a_analyser = extraire_texte_via_vision(fichier_implique, api_key)
+            with st.spinner("👁️ Le scanner local analyse votre image importée..."):
+                texte_a_analyser = extraire_texte_via_vision_locale(fichier_implique)
         else:
-            with st.spinner("📄 Extraction du texte..."):
+            with st.spinner("📄 Extraction du texte du fichier..."):
                 texte_a_analyser = extraire_texte_fichier(fichier_implique)
 
 with onglet_texte:
@@ -119,15 +114,15 @@ with onglet_texte:
 
 st.markdown("---")
 
-# --- MOTEUR D'ANALYSE HAUTE PRÉCISION ---
+# --- MOTEUR D'ANALYSE HAUTE PRÉCISION (LLAMA 3.3 70B) ---
 if texte_a_analyser.strip():
     texte_securise = anonymiser_texte(texte_a_analyser)
-    st.success("✓ Document scanné et sécurisé localement.")
+    st.success("✓ Document converti en texte et sécurisé avec succès.")
     
-    with st.expander("🔍 Voir le texte brut extrait (Vérification)"):
+    with st.expander("🔍 Voir le texte brut extrait par le scanner"):
         st.text(texte_securise)
 
-    if st.button("⚡ Lancer l'analyse simplifiée", type="primary"):
+    if st.button("⚡ Lancer l'analyse haute précision", type="primary"):
         st.subheader("📌 Votre Feuille de Route Clé en Main")
         
         client = Groq(api_key=api_key)
@@ -140,12 +135,15 @@ if texte_a_analyser.strip():
             "RULE 3 (NO HALLUCINATED LINKS): Only provide the main root domain of official portals if relevant (e.g., service-public.fr, gov.uk)."
         )
 
+        # Utilisation de la version confirmée de ton catalogue : llama-3.3-70b-versatile
+        modele_analyse = "llama-3.3-70b-versatile"
+
         with col1:
             st.write("🤔 **Ce que ça signifie (En clair) :**")
             zone_1 = st.empty()
             prompt_1 = f"{consignes_systeme}\n\nTask: Explain the exact purpose of this document in maximum two sentences. Write in the same language as the document. Document:\n\n{texte_securise}"
             try:
-                flux_1 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_1}], stream=True)
+                flux_1 = client.chat.completions.create(model=modele_analyse, messages=[{"role": "user", "content": prompt_1}], stream=True)
                 txt1 = ""
                 for morceau in flux_1:
                     if morceau.choices[0].delta.content:
@@ -159,7 +157,7 @@ if texte_a_analyser.strip():
             zone_2 = st.empty()
             prompt_2 = f"{consignes_systeme}\n\nTask: Extract all mandatory actions the user needs to follow as bullet points (-). Include precise money amounts if written. Write in the same language as the document. Document:\n\n{texte_securise}"
             try:
-                flux_2 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_2}], stream=True)
+                flux_2 = client.chat.completions.create(model=modele_analyse, messages=[{"role": "user", "content": prompt_2}], stream=True)
                 txt2 = ""
                 for morceau in flux_2:
                     if morceau.choices[0].delta.content:
@@ -173,7 +171,7 @@ if texte_a_analyser.strip():
             zone_3 = st.empty()
             prompt_3 = f"{consignes_systeme}\n\nTask: Identify all specific deadlines or durations. If none, write 'No deadline specified' in the document's language. Document:\n\n{texte_securise}"
             try:
-                flux_3 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_3}], stream=True)
+                flux_3 = client.chat.completions.create(model=modele_analyse, messages=[{"role": "user", "content": prompt_3}], stream=True)
                 txt3 = ""
                 for morceau in flux_3:
                     if morceau.choices[0].delta.content:
