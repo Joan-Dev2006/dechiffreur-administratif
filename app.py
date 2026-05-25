@@ -1,17 +1,25 @@
+import sys
+import asyncio
+
+# Correctif obligatoire pour éviter le bug WinError 10054 sur Windows (Local)
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 import streamlit as st
 import pdfplumber
 from docx import Document
 from groq import Groq
 import re
+import base64
 
 # Configuration de la page
 st.set_page_config(page_title="Déchiffreur Administratif National", page_icon="📝", layout="wide")
 
-st.title("📝 Le Déchiffreur Administratif - International & Sécurisé")
-st.write("Analyse automatique et sécurisée de vos documents dans leur langue d'origine.")
+st.title("📝 Le Déchiffreur Administratif - Version Grand Public")
+st.write("Prenez une photo de votre document, importez un fichier ou collez du texte.")
 st.markdown("---")
 
-# --- SÉCURITÉ STRICTE : LA CLÉ API DOIT VENIR DU SERVEUR ---
+# --- RÉCUPÉRATION DE LA CLÉ API ---
 api_key = None
 try:
     if "GROQ_API_KEY" in st.secrets:
@@ -19,20 +27,19 @@ try:
 except Exception:
     pass
 
-# Si la clé n'est pas dans les secrets du serveur, on arrête tout avec un message pour le développeur
 if not api_key:
-    st.error("⚠️ **Erreur de configuration (Message pour le Développeur) :** La clé API est introuvable sur le serveur Streamlit Cloud. Veuillez l'ajouter dans l'onglet 'Secrets' de votre tableau de bord share.streamlit.io sous le nom : `GROQ_API_KEY = \"gsk_...\"`.")
+    st.error("⚠️ **Erreur :** Clé API introuvable. Configurez votre fichier `.streamlit/secrets.toml` en local ou l'onglet 'Secrets' sur le Cloud.")
     st.stop()
 
-# Barre latérale purement informative (plus aucune saisie possible)
-st.sidebar.header("🛡️ Sécurité & Système")
+# Barre latérale purement informative
+st.sidebar.header("🛡️ Spécifications du Système")
 st.sidebar.markdown("""
-- **Clé API :** Intégrée au serveur 🔑
-- **Filtre RGPD :** Actif (Local) 🛡️
-- **Langue de réponse :** Identique au document 🌍
-- **Fiabilité :** 100% Factuelle (Pas d'invention) ⚡
+- **Mode :** Grand Public 👥
+- **Scanner Photo :** Actif (Llama Vision) 📸
+- **Fiabilité :** 100% Factuelle ⚡
 """)
 
+# --- FONCTIONS DE TRAITEMENT ---
 def anonymiser_texte(texte_brut):
     pattern_email = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     texte_anonyme = re.sub(pattern_email, "[E-MAIL MASQUÉ]", texte_brut)
@@ -56,48 +63,87 @@ def extraire_texte_fichier(fichier):
         texte = fichier.read().decode("utf-8")
     return texte
 
-# Interface utilisateur avec les Onglets
-st.subheader("1. Fournissez le document à analyser")
-onglet_fichier, onglet_texte = st.tabs(["📁 Importer un fichier (PDF, Word, TXT)", "✍️ Copier-coller du texte brut"])
+def extraire_texte_via_vision(image_file, api_key_groq):
+    """Utilise Llama Vision pour lire le texte sur une photo ou capture caméra"""
+    client_vision = Groq(api_key=api_key_groq)
+    bytes_data = image_file.read()
+    base64_image = base64.b64encode(bytes_data).decode('utf-8')
+    
+    prompt = "Transcribe all the text from this document image accurately. Output ONLY the raw text found. Do not add explanations or formatting."
+    
+    reponse = client_vision.chat.completions.create(
+        model="llama-3.2-11b-vision-preview",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
+                ],
+            }
+        ],
+    )
+    return reponse.choices[0].message.content
+
+# --- INTERFACE UTILISATEUR ---
+st.subheader("1. Soumettez votre document de la manière la plus simple pour vous")
+onglet_photo, onglet_fichier, onglet_texte = st.tabs([
+    "📸 Prendre une photo en direct", 
+    "📁 Importer un fichier (PDF, Word, Image)", 
+    "✍️ Copier-coller du texte"
+])
 
 texte_a_analyser = ""
 
+with onglet_photo:
+    photo_capturee = st.camera_input("Positionnez le document devant l'appareil et déclenchez :")
+    if photo_capturee is not None:
+        with st.spinner("👁️ Analyse de la photo capturée..."):
+            texte_a_analyser = extraire_texte_via_vision(photo_capturee, api_key)
+
 with onglet_fichier:
-    fichier_implique = st.file_uploader("Glissez-déposez votre document ici", type=["pdf", "docx", "txt"], key="uploader")
+    fichier_implique = st.file_uploader("Glissez-déposez un fichier :", type=["pdf", "docx", "txt", "png", "jpg", "jpeg"])
     if fichier_implique is not None:
-        with st.spinner("Lecture du fichier..."):
-            texte_a_analyser = extraire_texte_fichier(fichier_implique)
+        extension = fichier_implique.name.split(".")[-1].lower()
+        if extension in ["png", "jpg", "jpeg"]:
+            with st.spinner("👁️ Lecture de l'image importée..."):
+                texte_a_analyser = extraire_texte_via_vision(fichier_implique, api_key)
+        else:
+            with st.spinner("📄 Extraction du texte..."):
+                texte_a_analyser = extraire_texte_fichier(fichier_implique)
 
 with onglet_texte:
-    texte_colle = st.text_area("Collez votre texte ici :", height=200, placeholder="Collez le texte dans n'importe quelle langue (Français, Anglais, Espagnol...)" )
+    texte_colle = st.text_area("Collez votre texte ici :", height=150)
     if texte_colle.strip():
         texte_a_analyser = texte_colle
 
 st.markdown("---")
 
+# --- MOTEUR D'ANALYSE HAUTE PRÉCISION ---
 if texte_a_analyser.strip():
     texte_securise = anonymiser_texte(texte_a_analyser)
-    st.success("✓ Document prêt et sécurisé localement.")
+    st.success("✓ Document scanné et sécurisé localement.")
     
-    if st.button("⚡ Analyser le document", type="primary"):
-        st.subheader("📌 Analyse du Document")
+    with st.expander("🔍 Voir le texte brut extrait (Vérification)"):
+        st.text(texte_securise)
+
+    if st.button("⚡ Lancer l'analyse simplifiée", type="primary"):
+        st.subheader("📌 Votre Feuille de Route Clé en Main")
         
         client = Groq(api_key=api_key)
         col1, col2, col3 = st.columns(3)
         
-        # --- LES CONSIGNES DE FIABILITÉ ABSOLUE ET DE LANGUE ---
         consignes_systeme = (
             "You are a strict, expert legal and administrative assistant. "
-            "RULE 1 (LANGUAGE): You MUST detect the language of the provided document and write your entire response in that EXACT SAME LANGUAGE. If the document is in English, respond in English. If in Spanish, respond in Spanish. If in French, respond in French. "
-            "RULE 2 (100% RELIABILITY): You must rely ONLY and EXCLUSIVELY on the text provided. Do not use any outside knowledge, do not invent dates, historical facts, figures, or names. If an information is not explicitly written in the text, you must state that it is not specified. "
-            "RULE 3 (NO HALLUCINATED LINKS): Do not invent specific sub-URLs. Only provide the main root domain of official trusted portals related to the document's country if relevant (e.g., gov.uk, usa.gov, service-public.fr)."
+            "RULE 1 (LANGUAGE): Detect the language of the document and write your entire response in that EXACT SAME LANGUAGE. "
+            "RULE 2 (100% RELIABILITY): Rely ONLY on the text provided. Do not use outside knowledge. If an info is missing, say it's not specified. "
+            "RULE 3 (NO HALLUCINATED LINKS): Only provide the main root domain of official portals if relevant (e.g., service-public.fr, gov.uk)."
         )
 
-        # --- COLONNE 1 : LE SENS ---
         with col1:
-            st.write("🤔 **Meaning / Signification :**")
+            st.write("🤔 **Ce que ça signifie (En clair) :**")
             zone_1 = st.empty()
-            prompt_1 = f"{consignes_systeme}\n\nTask: Explain the exact purpose of this document in maximum two sentences. Remember to write in the same language as the document. Document:\n\n{texte_securise}"
+            prompt_1 = f"{consignes_systeme}\n\nTask: Explain the exact purpose of this document in maximum two sentences. Write in the same language as the document. Document:\n\n{texte_securise}"
             try:
                 flux_1 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_1}], stream=True)
                 txt1 = ""
@@ -106,13 +152,12 @@ if texte_a_analyser.strip():
                         txt1 += morceau.choices[0].delta.content
                         zone_1.info(txt1)
             except Exception as e:
-                st.error(f"Erreur API : {e}")
+                st.error(f"Erreur : {e}")
 
-        # --- COLONNE 2 : LES ACTIONS ---
         with col2:
-            st.write("🛠️ **Actions & Requirements :**")
+            st.write("🛠️ **Ce que vous devez faire (Actions) :**")
             zone_2 = st.empty()
-            prompt_2 = f"{consignes_systeme}\n\nTask: Extract all mandatory actions or guidelines that the user needs to follow from this text. List them as bullet points (-). Include precise financial amounts only if they are written in the text. If no actions are found, state it. Write in the same language as the document. Document:\n\n{texte_securise}"
+            prompt_2 = f"{consignes_systeme}\n\nTask: Extract all mandatory actions the user needs to follow as bullet points (-). Include precise money amounts if written. Write in the same language as the document. Document:\n\n{texte_securise}"
             try:
                 flux_2 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_2}], stream=True)
                 txt2 = ""
@@ -123,11 +168,10 @@ if texte_a_analyser.strip():
             except Exception as e:
                 pass
 
-        # --- COLONNE 3 : LES DÉLAIS ---
         with col3:
-            st.write("📅 **Deadlines & Dates :**")
+            st.write("📅 **Dates limites & Délais :**")
             zone_3 = st.empty()
-            prompt_3 = f"{consignes_systeme}\n\nTask: Identify all specific deadlines, durations, or expiration dates mentioned in the text. List them clearly. If no deadline is written in the text, explicitly write 'No deadline specified' (in the document's language). Document:\n\n{texte_securise}"
+            prompt_3 = f"{consignes_systeme}\n\nTask: Identify all specific deadlines or durations. If none, write 'No deadline specified' in the document's language. Document:\n\n{texte_securise}"
             try:
                 flux_3 = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt_3}], stream=True)
                 txt3 = ""
@@ -138,4 +182,4 @@ if texte_a_analyser.strip():
             except Exception as e:
                 pass
 else:
-    st.info("💡 En attente d'un document pour lancer l'analyse.")
+    st.info("💡 En attente d'une photo, d'un fichier ou d'un texte pour démarrer.")
