@@ -30,7 +30,43 @@ L'application adopte une **architecture hybride** : elle extrait le texte des im
 | **Pdfplumber / Python-docx** | Extraction textuelle des fichiers numériques |
 
 ---
+## Installer les dépendances
+Utilisez le gestionnaire de paquets pour installer les bibliothèques requises :
 
+Bash
+python -m pip install streamlit groq easyocr opencv-python-headless pillow numpy pdfplumber python-docx
+(Note : Lors du premier lancement d'un scan photo, EasyOCR téléchargera automatiquement les modèles de langues fr/en/es, ce qui peut prendre quelques minutes).
+
+---
+
+## Configuration de la clé API
+Créez un dossier .streamlit à la racine du projet, puis un fichier secrets.toml à l'intérieur :
+
+Bash
+mkdir .streamlit
+touch .streamlit/secrets.toml
+Ajoutez-y votre clé Groq de la manière suivante :
+
+Ini, TOML
+💻 Utilisation
+Pour lancer l'application en local, exécutez la commande suivante à la racine du projet :
+
+Bash
+python -m streamlit run app.py
+Ouvrez ensuite votre navigateur à l'adresse locale indiquée (généralement http://localhost:8501).
+
+---
+
+## 🔒 Sécurité et Confidentialité
+Ce projet prend la vie privée au sérieux. Aucun document original n'est envoyé sur le cloud. Le script Python nettoie le texte de ses marqueurs d'identité (téléphones, e-mails) en mémoire locale. Seul le texte anonymisé et purifié est transmis aux serveurs de Groq pour l'analyse.
+
+
+---
+
+### 💡 Un petit conseil pour la suite
+Une fois que tu auras poussé ce fichier sur ton dépôt GitHub avec un `git push`, l'interface de GitHub va automatiquement le mettre en page proprement sur la page d'accueil de ton projet.
+
+Est-ce que tu as déjà créé ton dépôt de code sur GitHub pour y déposer ton projet, ou est-ce que tu veux qu'on regarde ensemble comment lier ton dossier local à GitHub en ligne ?
 ## 🚀 Installation et Configuration
 
 ### 1. Prérequis
